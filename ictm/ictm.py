@@ -12,6 +12,7 @@ logr = logging.getLogger('ictm')
 def chan_vese(im,
               init_seg,
               image_dimension,
+              mask=None,
               tau=0.02,
               lambd=0.05,
               max_step=100,
@@ -26,11 +27,17 @@ def chan_vese(im,
                                      (tau, ) * image_dimension).to(im)
     u = init_seg.gt(0).to(im)
     steps = 0
+    if mask is not None:
+        mask = mask.to(th.bool)
+        u.mul_(mask)
+
     while steps <= max_step:
         phi = chan_vese_F(im, u) - chan_vese_F(im, 1-u) +  \
                 lambd * np.sqrt(np.pi / tau) * \
                 convolve((1 - 2*u), kern, image_dimension).squeeze()
         u_next = phi.le(0).to(im)
+        if mask is not None:
+            u_next.mul_(mask)
         if u_next.ne(u).sum() == 0:
             break
         del u
@@ -43,6 +50,7 @@ def chan_vese(im,
 def geodesic_active_contour(im,
                             init_seg,
                             image_dimension,
+                            mask=None,
                             sigma=1.,
                             tau=2.,
                             lambd=-0.2,
@@ -59,6 +67,9 @@ def geodesic_active_contour(im,
         image_dimension,
         gaussian=lambda x, y, z: gradient_magnitude_gaussian(
             x, y, z, kernel_size=kernel_size))
+    if mask is not None:
+        g.mul_(mask)
+        mask = mask.to(th.bool)
     g_sqrt = g.sqrt()
     kern = gaussian_kernel_generator((kernel_size, ) * image_dimension,
                                      tau).to(g)
@@ -68,6 +79,8 @@ def geodesic_active_contour(im,
         phi = g_sqrt * convolve(g_sqrt *
                                 (1 - 2 * u), kern, image_dimension) + lambd * g
         u_next = phi.le(0)
+        if mask is not None:
+            u_next.mul_(mask)
         if u_next.ne(u).sum() == 0:
             break
         del u
