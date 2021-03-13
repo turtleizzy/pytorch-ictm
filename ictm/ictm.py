@@ -35,7 +35,7 @@ def chan_vese(im,
         phi = chan_vese_F(im, u) - chan_vese_F(im, 1-u) +  \
                 lambd * np.sqrt(np.pi / tau) * \
                 convolve((1 - 2*u), kern, image_dimension).squeeze()
-        u_next = phi.le(0).to(im)
+        u_next = phi.lt(0).to(im)
         if mask is not None:
             u_next.mul_(mask)
         if u_next.ne(u).sum() == 0:
@@ -78,7 +78,42 @@ def geodesic_active_contour(im,
     while steps <= max_step:
         phi = g_sqrt * convolve(g_sqrt *
                                 (1 - 2 * u), kern, image_dimension) + lambd * g
-        u_next = phi.le(0)
+        u_next = phi.lt(0)
+        if mask is not None:
+            u_next.mul_(mask)
+        if u_next.ne(u).sum() == 0:
+            break
+        del u
+        u = u_next
+        steps += 1
+    logr.debug(f'Total steps: {steps}. Max steps: {max_step}.')
+    return u.to(th.uint8)
+
+
+def general_geodesic_active_contour(g,
+                                    init_seg,
+                                    image_dimension,
+                                    mask=None,
+                                    tau=2.,
+                                    lambd=-0.2,
+                                    max_step=10,
+                                    kernel_size=9):
+    """Geodesic active contour model solved with iterative convolution-
+    thresholding method (ICTM)."""
+    if type(tau) is not list and type(tau) is not tuple:
+        tau = (tau, ) * image_dimension
+    if mask is not None:
+        g.mul_(mask)
+        mask = mask.to(th.bool)
+    g_sqrt = g.sqrt()
+    kern = gaussian_kernel_generator((kernel_size, ) * image_dimension,
+                                     tau).to(g)
+    steps = 0
+    u = init_seg.gt(0).to(g)
+    while steps <= max_step:
+        phi = g_sqrt * convolve(g_sqrt *
+                                (1 - 2 * u), kern, image_dimension) + lambd * g
+        u_next = phi.lt(0)
         if mask is not None:
             u_next.mul_(mask)
         if u_next.ne(u).sum() == 0:
